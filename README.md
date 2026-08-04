@@ -76,6 +76,22 @@ The `/cloud-connect/v0/tunnel` path is routed by the cloud nginx to the chisel s
 
 The chisel client authenticates to the chisel server using a **shared secret** configured via environment variable. The server rejects connections that do not present the correct secret.
 
+The secret is not managed by kustomize and must be created manually in each cluster before the service is deployed. The `auth` value must be identical in both namespaces.
+
+**Cloud cluster (`huemie-cloud` namespace):**
+```sh
+kubectl create secret generic cloud-connect-secret \
+  --from-literal=auth=user:yourpassword \
+  -n huemie-cloud
+```
+
+**Appliance cluster (`huemie-local` namespace):**
+```sh
+kubectl create secret generic cloud-connect-secret \
+  --from-literal=auth=user:yourpassword \
+  -n huemie-local
+```
+
 ## Host header flow
 
 1. Public request arrives at the cloud nginx with an external `Host` header.

@@ -27,6 +27,13 @@ http {
             proxy_set_header   Connection      $connection_upgrade;
             proxy_set_header   X-Real-IP       $remote_addr;
             proxy_set_header   X-Forwarded-For $proxy_add_x_forwarded_for;
+            # Long-lived SSE streams (e.g. chatbot-service's .../follow/{id})
+            # can go well over nginx's default 60s proxy_read_timeout between
+            # writes while idle, with no data flowing to reset it -- nginx
+            # then kills the connection, sometimes mid-frame. proxy_buffering
+            # off avoids nginx holding small streamed frames back too.
+            proxy_buffering    off;
+            proxy_read_timeout 3600s;
         }
     }
 }
