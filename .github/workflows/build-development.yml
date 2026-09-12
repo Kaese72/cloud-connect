@@ -14,9 +14,14 @@ jobs:
       matrix:
         include:
           - context: server
+            dockerfile: Dockerfile
             image: ghcr.io/${{ github.repository }}-server-development
           - context: client
+            dockerfile: Dockerfile
             image: ghcr.io/${{ github.repository }}-client-development
+          - context: client
+            dockerfile: Dockerfile.migrater
+            image: ghcr.io/${{ github.repository }}-client-migrater-development
 
     steps:
       - name: Checkout repository
@@ -47,6 +52,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
+          file: ${{ matrix.context }}/${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

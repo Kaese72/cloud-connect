@@ -17,10 +17,10 @@ http {
     # to the local Kubernetes ingress.
     server {
         listen      9091;
-        server_name ~^${CLOUD_CONNECT_ALLOWED_HOST_PATTERN}$;
+        server_name ~^{{.AllowedHostPattern}}$;
 
         location / {
-            proxy_pass         http://${CLOUD_CONNECT_LOCAL_INGRESS};
+            proxy_pass         http://{{.LocalIngress}};
             proxy_http_version 1.1;
             proxy_set_header   Host            $host;
             proxy_set_header   Upgrade         $http_upgrade;
