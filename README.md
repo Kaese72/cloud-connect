@@ -60,7 +60,7 @@ binary) as the container's entrypoint:
 
 | Process | Role |
 |---|---|
-| **cloud-connect-client** | Serves the local control API (status, enrollment), owns the enrollment/secret database, starts nginx, and starts/stops the chisel client subprocess based on enrollment state - see "Enrollment" below. |
+| **cloud-connect-client** | Serves the local control API (status, enrollment), owns the enrollment/secret database, starts nginx, and starts/stops the in-process chisel client (linked in as a library, not a subprocess) based on enrollment state - see "Enrollment" below. |
 | **chisel client** | Connects outbound to the cloud endpoint at `/cloud-connect/v0/tunnel`, authenticates with the appliance secret, and establishes the reverse tunnel. Only running once enrolled. |
 | **nginx** | Receives traffic arriving through the tunnel. Validates the `Host` header against a whitelist of permitted internal hostnames. Forwards to the local k8s ingress. |
 
