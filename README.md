@@ -91,9 +91,20 @@ The flow is an OAuth-authorization-code-style redirect, so the raw appliance sec
 3. The browser is redirected back to the local UI's callback URL with the exchange code, the new appliance id, and the original `state`.
 4. The local UI forwards these to `POST /cloud-connect-client/v0/enrollment/complete`. The agent validates `state`, then redeems the exchange code directly against `appliance-registry` over the internet (server-to-server, independent of the tunnel, which doesn't exist yet), receives the real appliance secret and server URL, persists them, and starts the chisel client.
 
-`GET /cloud-connect-client/v0/status` reports both the enrollment state (`unenrolled`/`enrolled`) and whether the tunnel is actually connected right now, so the UI can distinguish "not enrolled" from "enrolled but the tunnel is down." All of these endpoints require the same authenticated "use" JWT as the rest of huemie-ui, since enrolling activates an outbound internet tunnel.
+`GET /cloud-connect-client/v0/status` reports both the enrollment state (`unenrolled`/`enrolled`) and whether the tunnel is actually connected right now, so the UI can distinguish "not enrolled" from "enrolled but the tunnel is down." All of these endpoints require the same authenticated "use" JWT as the rest of huemie-ui, since enrolling activates an outbound internet tunnel. That is the appliance's own authentication service's token (not a cloud-user-registry one), verified with the authentication service's public `usertoken` package.
 
 A pod restart after enrollment reconnects the tunnel automatically - the agent resumes from its database at boot rather than requiring enrollment to be repeated.
+
+## Cloud login (internal API)
+
+Once enrolled, `cloud-connect-client` is also the appliance's only holder of cloud credentials, so it fronts "Log in with Humi Cloud" for the authentication service (see appliance-registry's README, "Cloud login", and the authentication service's README). It exposes, under `/cloud-connect-client/v0/internal/cloud-login/`:
+
+* `GET status` - whether the appliance is enrolled (i.e. whether to offer cloud login).
+* `POST start` - builds the cloud-ui `/appliance-login` URL (with the caller's `state`, the UI callback URL and this appliance's id).
+* `POST redeem` - redeems a login code with appliance-registry, authenticating with the appliance secret, and returns the cloud user's identity.
+* `GET access/{cloudUserId}` - asks appliance-registry whether that user still has access. A refusal (including the secret no longer being accepted) is `allowed: false`; only failing to get an answer is an error (502), so the authentication service can tell "denied" from "unknown".
+
+These are served on a **separate listener** (`INTERNAL_PORT`, default 8081) that the ingress never routes to - unlike the port-8080 API, which is reachable through the cloud tunnel - and are further guarded by a static service token (`AUTH_INTERNAL_SERVICE_TOKENS`, comma-separated to allow rotation). A NetworkPolicy allows only the authentication service to reach it.
 
 ## Host header flow
 

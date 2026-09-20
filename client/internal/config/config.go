@@ -29,13 +29,21 @@ func (conf DatabaseConfig) Validate() error {
 // AuthConfig configures verification of the "use" JWT issued by the
 // authentication service - every endpoint on this service requires one,
 // since enrolling activates an outbound internet tunnel.
+//
+// InternalServiceTokens is a comma-separated list of static bearer tokens the
+// appliance's authentication service uses to call the internal cloud-login
+// endpoints, which by nature are called before (or without) a use token.
 type AuthConfig struct {
 	UseTokenRSAPublicKeyPath string `json:"use-token-rsa-public-key-path" mapstructure:"use-token-rsa-public-key-path"`
+	InternalServiceTokens    string `json:"internal-service-tokens" mapstructure:"internal-service-tokens"`
 }
 
 func (conf AuthConfig) Validate() error {
 	if conf.UseTokenRSAPublicKeyPath == "" {
 		return errors.New("must supply auth use-token-rsa-public-key-path")
+	}
+	if conf.InternalServiceTokens == "" {
+		return errors.New("must supply auth internal-service-tokens")
 	}
 	return nil
 }
@@ -56,14 +64,19 @@ func (conf ApplianceRegistryConfig) Validate() error {
 
 // CloudConfig points at the cloud-hosted UI that starts an enrollment
 // (cloud-ui's /enroll page), used to build the redirect URL returned by
-// POST .../enrollment/start.
+// POST .../enrollment/start. LoginBaseURL is the equivalent for cloud-ui's
+// /appliance-login page, used by the internal cloud-login start endpoint.
 type CloudConfig struct {
 	EnrollBaseURL string `json:"enroll-base-url" mapstructure:"enroll-base-url"`
+	LoginBaseURL  string `json:"login-base-url" mapstructure:"login-base-url"`
 }
 
 func (conf CloudConfig) Validate() error {
 	if conf.EnrollBaseURL == "" {
 		return errors.New("must supply cloud enroll-base-url")
+	}
+	if conf.LoginBaseURL == "" {
+		return errors.New("must supply cloud login-base-url")
 	}
 	return nil
 }
@@ -94,6 +107,12 @@ type Config struct {
 	Cloud             CloudConfig             `json:"cloud" mapstructure:"cloud"`
 	Tunnel            TunnelConfig            `json:"tunnel" mapstructure:"tunnel"`
 	Port              int                     `json:"port" mapstructure:"port"`
+	// InternalPort serves the cloud-login API the authentication service uses
+	// (see cloudloginwebapp). It is a separate listener from Port so the
+	// appliance ingress - which is also reachable from the internet through
+	// the cloud tunnel - can never route to it; the service token is defence
+	// in depth rather than the only barrier.
+	InternalPort int `json:"internal-port" mapstructure:"internal-port"`
 }
 
 func (conf Config) Validate() error {
@@ -130,10 +149,12 @@ func init() {
 	viper.SetDefault("database.database", "cloudconnectclient")
 
 	viper.BindEnv("auth.use-token-rsa-public-key-path")
+	viper.BindEnv("auth.internal-service-tokens")
 
 	viper.BindEnv("appliance-registry.base-url")
 
 	viper.BindEnv("cloud.enroll-base-url")
+	viper.BindEnv("cloud.login-base-url")
 
 	viper.BindEnv("tunnel.allowed-host-pattern")
 	viper.BindEnv("tunnel.local-ingress")
@@ -144,6 +165,8 @@ func init() {
 
 	viper.BindEnv("port")
 	viper.SetDefault("port", 8080)
+	viper.BindEnv("internal-port")
+	viper.SetDefault("internal-port", 8081)
 
 	err := viper.Unmarshal(&Loaded)
 	if err != nil {
