@@ -104,6 +104,16 @@ func (c Client) Redeem(ctx context.Context, applianceID int64, exchangeCode stri
 	return out, err
 }
 
+// RotateSecret asks the registry to replace this appliance's secret, proving
+// it holds the current one. The old secret stops working as soon as this
+// succeeds, so the caller must persist the returned one - see RotateOwnSecret
+// in appliance-registry.
+func (c Client) RotateSecret(ctx context.Context, applianceID int64, applianceSecret string) (RedeemResponse, error) {
+	var out RedeemResponse
+	err := c.do(ctx, http.MethodPost, "/appliance-registry/v0/appliances/"+strconv.FormatInt(applianceID, 10)+"/secret/rotate", applianceSecret, nil, &out)
+	return out, err
+}
+
 // RedeemLoginCode exchanges a single-use cloud-login code for the cloud user
 // it was issued to, authenticating as the appliance with its secret - see
 // RedeemLoginCode in appliance-registry.

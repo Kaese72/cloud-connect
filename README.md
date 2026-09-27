@@ -95,6 +95,15 @@ The flow is an OAuth-authorization-code-style redirect, so the raw appliance sec
 
 A pod restart after enrollment reconnects the tunnel automatically - the agent resumes from its database at boot rather than requiring enrollment to be repeated.
 
+### Rotating the appliance secret
+
+`POST /cloud-connect-client/v0/enrollment/rotate-secret` (the "Rotate secret" button on the Cloud Connect page) replaces the appliance's cloud secret without de-enrolling. The agent calls `POST /appliance-registry/v0/appliances/{id}/secret/rotate` authenticating with its *current* secret, saves the new secret the registry returns, and restarts the tunnel with it - see appliance-registry's README, "Revocation / rotation". No cloud login is involved.
+
+* The registry invalidates the old secret the moment it answers, so the agent retries saving the new one a few times; if it still can't, the call fails with a message telling the user to disconnect and enroll again.
+* If the registry no longer accepts the current secret (appliance revoked, or already rotated from the cloud side) the call is a `409` - there is nothing to rotate from, so the appliance has to enroll again.
+* Like the other enrollment endpoints it only requires a valid appliance `use` token. The appliance has no admin role yet, so "an admin" currently means any logged-in user; tighten it here when roles exist.
+* The cloud-side `cloud-connect-server-<id>` reads its secret from an environment variable at pod start, so it must be restarted to accept the new secret. Until it is, the freshly restarted tunnel will fail to reconnect (status `enrolled`, `disconnected`).
+
 ## Cloud login (internal API)
 
 Once enrolled, `cloud-connect-client` is also the appliance's only holder of cloud credentials, so it fronts "Log in with Humi Cloud" for the authentication service (see appliance-registry's README, "Cloud login", and the authentication service's README). It exposes, under `/cloud-connect-client/v0/internal/cloud-login/`:

@@ -70,6 +70,7 @@ func main() {
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/start", app.StartEnrollment)
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/complete", app.CompleteEnrollment)
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/reset", app.ResetEnrollment)
+	huma.Post(api, "/cloud-connect-client/v0/enrollment/rotate-secret", app.RotateSecret)
 
 	// Internal-only cloud-login API for the authentication service, on its own
 	// port so the ingress can never route to it.
