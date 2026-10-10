@@ -95,8 +95,7 @@ func (conf TunnelConfig) Validate() error {
 // InternalConfig configures the internal cloud-login listener (see
 // cloudloginwebapp) that only the appliance's authentication service calls.
 // It is authenticated by verifying the caller is really authentication's own
-// Kubernetes ServiceAccount via the TokenReview API (huemie-lib/k8sauth),
-// rather than a static shared secret.
+// Kubernetes ServiceAccount via the TokenReview API (huemie-lib/k8sauth).
 type InternalConfig struct {
 	// TokenAudience is the audience a caller's ServiceAccount token must have
 	// been issued for. Must match the `audience` on authentication's
