@@ -3,6 +3,8 @@ github.com/Kaese72/authentication v0.0.6 h1:OTvtMMM+ERn8t/3OzW+lssFQZBPeiJfzFIcI
 github.com/Kaese72/authentication v0.0.6/go.mod h1:YMcnLWcqkd69gNRpE6hDG6MpQ1CgszRr3umh2/QkeUU=
 github.com/Kaese72/huemie-lib v0.0.9 h1:0vml5A9iE3lLwSkR+3ZoGwg4/8G69wYl28EZu9MUmBc=
 github.com/Kaese72/huemie-lib v0.0.9/go.mod h1:iRJoHtdp4DeShTicajU/3b+Rw90oPA4x9JwnjE7c9sQ=
+github.com/Kaese72/huemie-lib v0.0.10 h1:YNuhM8TI/y3VVyzWKKcUOQVLSLXVZAt5SnJDRAf/rcQ=
+github.com/Kaese72/huemie-lib v0.0.10/go.mod h1:iRJoHtdp4DeShTicajU/3b+Rw90oPA4x9JwnjE7c9sQ=
 github.com/armon/go-radix v1.0.0 h1:F4z6KzEeeQIMeLFa97iZU6vupzoecKdU5TX24SNppXI=
 github.com/armon/go-radix v1.0.0/go.mod h1:ufUuZ+zHj4x4TnLV4JWEpy2hxWSpsRywHrMgIH9cCH8=
 github.com/armon/go-socks5 v0.0.0-20160902184237-e75332964ef5 h1:0CwZNZbxp69SHPdPJAN/hZIm0C4OItdklCFmMRWYpio=

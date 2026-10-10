@@ -81,7 +81,7 @@ func main() {
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/reset", app.ResetEnrollment)
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/rotate-secret", app.RotateSecret)
 
-	clientset, err := k8sauth.NewInClusterClientset()
+	clientset, err := k8sauth.NewInClusterClientset(config.Loaded.Kubernetes.ApiserverProxyURL)
 	if err != nil {
 		logging.Error("failed to build in-cluster Kubernetes clientset: "+err.Error(), context.TODO())
 		os.Exit(1)

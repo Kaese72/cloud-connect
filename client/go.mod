@@ -4,7 +4,7 @@ go 1.25.0
 
 require (
 	github.com/Kaese72/authentication v0.0.6
-	github.com/Kaese72/huemie-lib v0.0.9
+	github.com/Kaese72/huemie-lib v0.0.10
 	github.com/danielgtaylor/huma/v2 v2.39.1
 	github.com/gorilla/mux v1.8.1
 	github.com/jpillora/chisel v1.10.1
