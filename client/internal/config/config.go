@@ -29,21 +29,13 @@ func (conf DatabaseConfig) Validate() error {
 // AuthConfig configures verification of the "use" JWT issued by the
 // authentication service - every endpoint on this service requires one,
 // since enrolling activates an outbound internet tunnel.
-//
-// InternalServiceTokens is a comma-separated list of static bearer tokens the
-// appliance's authentication service uses to call the internal cloud-login
-// endpoints, which by nature are called before (or without) a use token.
 type AuthConfig struct {
 	UseTokenRSAPublicKeyPath string `json:"use-token-rsa-public-key-path" mapstructure:"use-token-rsa-public-key-path"`
-	InternalServiceTokens    string `json:"internal-service-tokens" mapstructure:"internal-service-tokens"`
 }
 
 func (conf AuthConfig) Validate() error {
 	if conf.UseTokenRSAPublicKeyPath == "" {
 		return errors.New("must supply auth use-token-rsa-public-key-path")
-	}
-	if conf.InternalServiceTokens == "" {
-		return errors.New("must supply auth internal-service-tokens")
 	}
 	return nil
 }
@@ -100,6 +92,35 @@ func (conf TunnelConfig) Validate() error {
 	return nil
 }
 
+// InternalConfig configures the internal cloud-login listener (see
+// cloudloginwebapp) that only the appliance's authentication service calls.
+// It is authenticated by verifying the caller is really authentication's own
+// Kubernetes ServiceAccount via the TokenReview API (huemie-lib/k8sauth),
+// rather than a static shared secret.
+type InternalConfig struct {
+	// TokenAudience is the audience a caller's ServiceAccount token must have
+	// been issued for. Must match the `audience` on authentication's
+	// projected ServiceAccount token volume.
+	TokenAudience string `json:"token-audience" mapstructure:"token-audience"`
+}
+
+func (conf InternalConfig) Validate() error {
+	if conf.TokenAudience == "" {
+		return errors.New("must supply internal token-audience")
+	}
+	return nil
+}
+
+// DebugConfig holds settings that exist only to make local development
+// possible and must never be set in a real deployment -- see
+// authentication's identical DebugConfig, which this mirrors.
+type DebugConfig struct {
+	// Namespace overrides huemie-lib/k8sauth.CurrentNamespace() for the
+	// internal listener's ServiceAccount check. Only needed when running
+	// outside a pod. Left empty, the real namespace is read as normal.
+	Namespace string `json:"namespace" mapstructure:"namespace"`
+}
+
 type Config struct {
 	Database          DatabaseConfig          `json:"database" mapstructure:"database"`
 	Auth              AuthConfig              `json:"auth" mapstructure:"auth"`
@@ -110,9 +131,11 @@ type Config struct {
 	// InternalPort serves the cloud-login API the authentication service uses
 	// (see cloudloginwebapp). It is a separate listener from Port so the
 	// appliance ingress - which is also reachable from the internet through
-	// the cloud tunnel - can never route to it; the service token is defence
-	// in depth rather than the only barrier.
-	InternalPort int `json:"internal-port" mapstructure:"internal-port"`
+	// the cloud tunnel - can never route to it; the TokenReview check is
+	// defence in depth rather than the only barrier.
+	InternalPort int            `json:"internal-port" mapstructure:"internal-port"`
+	Internal     InternalConfig `json:"internal" mapstructure:"internal"`
+	Debug        DebugConfig    `json:"debug" mapstructure:"debug"`
 }
 
 func (conf Config) Validate() error {
@@ -129,6 +152,9 @@ func (conf Config) Validate() error {
 		return err
 	}
 	if err := conf.Tunnel.Validate(); err != nil {
+		return err
+	}
+	if err := conf.Internal.Validate(); err != nil {
 		return err
 	}
 	return nil
@@ -149,7 +175,6 @@ func init() {
 	viper.SetDefault("database.database", "cloudconnectclient")
 
 	viper.BindEnv("auth.use-token-rsa-public-key-path")
-	viper.BindEnv("auth.internal-service-tokens")
 
 	viper.BindEnv("appliance-registry.base-url")
 
@@ -167,6 +192,13 @@ func init() {
 	viper.SetDefault("port", 8080)
 	viper.BindEnv("internal-port")
 	viper.SetDefault("internal-port", 8081)
+
+	viper.BindEnv("internal.token-audience")
+	viper.SetDefault("internal.token-audience", "humi-cloud-connect-client-internal")
+
+	// Local-development-only override. Never set this in a real deployment --
+	// see DebugConfig.
+	viper.BindEnv("debug.namespace")
 
 	err := viper.Unmarshal(&Loaded)
 	if err != nil {

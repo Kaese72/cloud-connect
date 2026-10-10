@@ -52,12 +52,14 @@ func registry(t *testing.T, status int, body string, gotAuth *string) appliancer
 	return applianceregistry.NewClient(srv.URL)
 }
 
-const token = "Bearer internal-token"
-
 type accessInput = struct {
-	Authorization string `header:"Authorization"`
-	CloudUserID   int64  `path:"cloudUserId"`
+	CloudUserID int64 `path:"cloudUserId"`
 }
+
+// Note: who may call this package's handlers at all (only authentication's
+// own Kubernetes ServiceAccount) is enforced by k8sauth.RequireServiceAccount
+// at the router level (see main.go), not by anything in this package -- see
+// huemie-lib/k8sauth's own tests for that behavior.
 
 func TestCheckAccessAuthenticatesAsTheApplianceAndMapsAnswers(t *testing.T) {
 	tests := []struct {
@@ -80,8 +82,8 @@ func TestCheckAccessAuthenticatesAsTheApplianceAndMapsAnswers(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var gotAuth string
-			app := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, tc.status, tc.body, &gotAuth), "https://cloud/appliance-login", []string{"internal-token"})
-			res, err := app.CheckAccess(context.Background(), &accessInput{Authorization: token, CloudUserID: 7})
+			app := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, tc.status, tc.body, &gotAuth), "https://cloud/appliance-login")
+			res, err := app.CheckAccess(context.Background(), &accessInput{CloudUserID: 7})
 			if tc.wantErr != 0 {
 				if statusOf(err) != tc.wantErr {
 					t.Fatalf("expected %d, got %v", tc.wantErr, err)
@@ -105,43 +107,31 @@ func TestCheckAccessUnreachableRegistryIsNotDenied(t *testing.T) {
 	srv := httptest.NewServer(http.NotFoundHandler())
 	registryURL := srv.URL
 	srv.Close() // nothing is listening any more
-	app := NewWebApp(fakeDB{enrollment: enrolled()}, applianceregistry.NewClient(registryURL), "https://cloud/appliance-login", []string{"internal-token"})
+	app := NewWebApp(fakeDB{enrollment: enrolled()}, applianceregistry.NewClient(registryURL), "https://cloud/appliance-login")
 
-	_, err := app.CheckAccess(context.Background(), &accessInput{Authorization: token, CloudUserID: 7})
+	_, err := app.CheckAccess(context.Background(), &accessInput{CloudUserID: 7})
 	if statusOf(err) != http.StatusBadGateway {
 		t.Fatalf("expected 502 when the registry cannot be reached, got %v", err)
 	}
 }
 
-func TestEndpointsRequireServiceToken(t *testing.T) {
-	app := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 200, `{"allowed":true}`, nil), "https://cloud/appliance-login", []string{"internal-token"})
-	for _, header := range []string{"", "Bearer wrong", "internal-token"} {
-		if _, err := app.CheckAccess(context.Background(), &accessInput{Authorization: header, CloudUserID: 7}); statusOf(err) != http.StatusUnauthorized {
-			t.Errorf("CheckAccess with %q: expected 401, got %v", header, err)
-		}
-	}
-}
-
 func TestNotEnrolledIsConflictExceptForStatus(t *testing.T) {
-	app := NewWebApp(fakeDB{enrollment: persistence.Enrollment{Status: persistence.StatusUnenrolled}}, registry(t, 200, `{}`, nil), "https://cloud/appliance-login", []string{"internal-token"})
+	app := NewWebApp(fakeDB{enrollment: persistence.Enrollment{Status: persistence.StatusUnenrolled}}, registry(t, 200, `{}`, nil), "https://cloud/appliance-login")
 
-	if _, err := app.CheckAccess(context.Background(), &accessInput{Authorization: token, CloudUserID: 7}); statusOf(err) != http.StatusConflict {
+	if _, err := app.CheckAccess(context.Background(), &accessInput{CloudUserID: 7}); statusOf(err) != http.StatusConflict {
 		t.Errorf("CheckAccess: expected 409, got %v", err)
 	}
-	res, err := app.GetStatus(context.Background(), &struct {
-		Authorization string `header:"Authorization"`
-	}{Authorization: token})
+	res, err := app.GetStatus(context.Background(), &struct{}{})
 	if err != nil || res.Body.Available {
 		t.Errorf("status must report unavailable rather than fail, got %+v %v", res, err)
 	}
 }
 
 func TestStartBuildsCloudURLWithApplianceAndState(t *testing.T) {
-	app := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 200, `{}`, nil), "https://cloud.example/appliance-login", []string{"internal-token"})
+	app := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 200, `{}`, nil), "https://cloud.example/appliance-login")
 	res, err := app.Start(context.Background(), &struct {
-		Authorization string `header:"Authorization"`
-		Body          restmodels.CloudLoginStartRequest
-	}{Authorization: token, Body: restmodels.CloudLoginStartRequest{State: "abc123", ReturnTo: "https://app.local/cloud-login/callback"}})
+		Body restmodels.CloudLoginStartRequest
+	}{Body: restmodels.CloudLoginStartRequest{State: "abc123", ReturnTo: "https://app.local/cloud-login/callback"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,21 +145,20 @@ func TestStartBuildsCloudURLWithApplianceAndState(t *testing.T) {
 
 func TestRedeemRefusalIsForbiddenAndOutageIsBadGateway(t *testing.T) {
 	body := &struct {
-		Authorization string `header:"Authorization"`
-		Body          restmodels.CloudLoginRedeemRequest
-	}{Authorization: token, Body: restmodels.CloudLoginRedeemRequest{Code: "c"}}
+		Body restmodels.CloudLoginRedeemRequest
+	}{Body: restmodels.CloudLoginRedeemRequest{Code: "c"}}
 
-	refused := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 401, `{}`, nil), "https://cloud/appliance-login", []string{"internal-token"})
+	refused := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 401, `{}`, nil), "https://cloud/appliance-login")
 	if _, err := refused.Redeem(context.Background(), body); statusOf(err) != http.StatusForbidden {
 		t.Errorf("expected 403 when the registry refuses the code, got %v", err)
 	}
 
-	broken := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 500, `{}`, nil), "https://cloud/appliance-login", []string{"internal-token"})
+	broken := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 500, `{}`, nil), "https://cloud/appliance-login")
 	if _, err := broken.Redeem(context.Background(), body); statusOf(err) != http.StatusBadGateway {
 		t.Errorf("expected 502 when the registry fails, got %v", err)
 	}
 
-	ok := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 200, `{"id":7,"username":"alice","name":"Alice","surname":"A","email":"a@example.com"}`, nil), "https://cloud/appliance-login", []string{"internal-token"})
+	ok := NewWebApp(fakeDB{enrollment: enrolled()}, registry(t, 200, `{"id":7,"username":"alice","name":"Alice","surname":"A","email":"a@example.com"}`, nil), "https://cloud/appliance-login")
 	res, err := ok.Redeem(context.Background(), body)
 	if err != nil || res.Body.ID != 7 || res.Body.Username != "alice" {
 		t.Errorf("expected alice, got %+v %v", res, err)

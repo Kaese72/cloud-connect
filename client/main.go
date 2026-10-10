@@ -15,12 +15,21 @@ import (
 	"github.com/Kaese72/cloud-connect/client/internal/nginxboot"
 	"github.com/Kaese72/cloud-connect/client/internal/persistence/mariadb"
 	"github.com/Kaese72/cloud-connect/client/internal/tunnel"
+	"github.com/Kaese72/huemie-lib/k8sauth"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humamux"
 	"github.com/gorilla/mux"
 
 	_ "go.elastic.co/apm/module/apmsql/mysql"
 )
+
+// internalTrustedServiceAccountNames are the only Kubernetes ServiceAccounts
+// allowed to call the internal cloud-login listener -- see
+// k8sauth.RequireServiceAccount. Hardcoded, not configuration: who may call
+// in on the appliance's behalf of the cloud is a security boundary of this
+// service, not a per-deployment knob. Mirrors authentication's own
+// internalTrustedServiceAccountNames.
+var internalTrustedServiceAccountNames = []string{"authentication"}
 
 func main() {
 	if err := config.Loaded.Validate(); err != nil {
@@ -52,7 +61,7 @@ func main() {
 	registryClient := applianceregistry.NewClient(config.Loaded.ApplianceRegistry.BaseURL)
 	supervisor := tunnel.NewSupervisor()
 	app := cloudconnectwebapp.NewWebApp(dbPersistence, registryClient, supervisor, config.Loaded.Cloud.EnrollBaseURL)
-	cloudLoginApp := cloudloginwebapp.NewWebApp(dbPersistence, registryClient, config.Loaded.Cloud.LoginBaseURL, cloudloginwebapp.ParseTokenList(config.Loaded.Auth.InternalServiceTokens))
+	cloudLoginApp := cloudloginwebapp.NewWebApp(dbPersistence, registryClient, config.Loaded.Cloud.LoginBaseURL)
 
 	if err := app.ResumeIfEnrolled(context.Background()); err != nil {
 		logging.Error(err.Error(), context.Background())
@@ -72,9 +81,32 @@ func main() {
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/reset", app.ResetEnrollment)
 	huma.Post(api, "/cloud-connect-client/v0/enrollment/rotate-secret", app.RotateSecret)
 
+	clientset, err := k8sauth.NewInClusterClientset()
+	if err != nil {
+		logging.Error("failed to build in-cluster Kubernetes clientset: "+err.Error(), context.TODO())
+		os.Exit(1)
+	}
+
+	// debug.namespace is a local-development-only override (see
+	// config.DebugConfig): outside a real pod there is no
+	// /var/run/secrets/kubernetes.io/serviceaccount/namespace file for
+	// k8sauth.CurrentNamespace to read, so it must be supplied explicitly
+	// instead. Never set in a real deployment, where the real namespace is
+	// always used.
+	namespace := config.Loaded.Debug.Namespace
+	if namespace == "" {
+		namespace, err = k8sauth.CurrentNamespace()
+		if err != nil {
+			logging.Error("failed to determine this pod's own namespace: "+err.Error(), context.TODO())
+			os.Exit(1)
+		}
+	}
+	requireServiceAccount := k8sauth.RequireServiceAccount(clientset, internalTrustedServiceAccountNames, config.Loaded.Internal.TokenAudience, namespace)
+
 	// Internal-only cloud-login API for the authentication service, on its own
 	// port so the ingress can never route to it.
 	internalRouter := mux.NewRouter()
+	internalRouter.Use(requireServiceAccount)
 	internalHumaConfig := huma.DefaultConfig("cloud-connect-client-internal", "1.0.0")
 	internalHumaConfig.OpenAPIPath = "/cloud-connect-client/internal/openapi"
 	internalHumaConfig.DocsPath = ""

@@ -1,16 +1,16 @@
 // Package cloudloginwebapp is the internal API the appliance's authentication
-// service uses to offer "log in with Humi Cloud". It is authenticated with a
-// static service token rather than a user's use token, because its callers
-// are exactly the requests that have no local session yet (starting a login,
-// completing one) or are refreshing one.
+// service uses to offer "log in with Humi Cloud". Its router is authenticated
+// by huemie-lib/k8sauth.RequireServiceAccount (see main.go), which verifies
+// the caller is really authentication's own Kubernetes ServiceAccount via the
+// TokenReview API, rather than a user's use token -- its callers are exactly
+// the requests that have no local session yet (starting a login, completing
+// one) or are refreshing one.
 package cloudloginwebapp
 
 import (
 	"context"
-	"crypto/subtle"
 	"net/url"
 	"strconv"
-	"strings"
 
 	"github.com/Kaese72/cloud-connect/client/internal/applianceregistry"
 	"github.com/Kaese72/cloud-connect/client/internal/logging"
@@ -23,38 +23,10 @@ type webApp struct {
 	persistence       persistence.CloudConnectClientDB
 	applianceRegistry applianceregistry.Client
 	cloudLoginURL     string
-	serviceTokens     []string
 }
 
-func NewWebApp(p persistence.CloudConnectClientDB, applianceRegistry applianceregistry.Client, cloudLoginURL string, serviceTokens []string) webApp {
-	return webApp{persistence: p, applianceRegistry: applianceRegistry, cloudLoginURL: cloudLoginURL, serviceTokens: serviceTokens}
-}
-
-// ParseTokenList splits a comma-separated config value into the set of
-// currently-valid service tokens, so one can be rotated without a
-// synchronized cutover.
-func ParseTokenList(raw string) []string {
-	var out []string
-	for _, t := range strings.Split(raw, ",") {
-		t = strings.TrimSpace(t)
-		if t != "" {
-			out = append(out, t)
-		}
-	}
-	return out
-}
-
-func (app webApp) checkServiceToken(authHeader string) error {
-	if !strings.HasPrefix(authHeader, "Bearer ") {
-		return huma.Error401Unauthorized("invalid service token")
-	}
-	provided := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
-	for _, configured := range app.serviceTokens {
-		if subtle.ConstantTimeCompare([]byte(provided), []byte(configured)) == 1 {
-			return nil
-		}
-	}
-	return huma.Error401Unauthorized("invalid service token")
+func NewWebApp(p persistence.CloudConnectClientDB, applianceRegistry applianceregistry.Client, cloudLoginURL string) webApp {
+	return webApp{persistence: p, applianceRegistry: applianceRegistry, cloudLoginURL: cloudLoginURL}
 }
 
 // enrolled returns the current enrollment's cloud credentials, or a 409 if
@@ -71,14 +43,9 @@ func (app webApp) enrolled(ctx context.Context) (applianceID int64, secret strin
 	return *enrollment.ApplianceID, *enrollment.ApplianceSecret, nil
 }
 
-func (app webApp) GetStatus(ctx context.Context, input *struct {
-	Authorization string `header:"Authorization"`
-}) (*struct {
+func (app webApp) GetStatus(ctx context.Context, input *struct{}) (*struct {
 	Body restmodels.CloudLoginStatusResponse
 }, error) {
-	if err := app.checkServiceToken(input.Authorization); err != nil {
-		return nil, err
-	}
 	_, _, err := app.enrolled(ctx)
 	if err != nil {
 		if se, ok := err.(huma.StatusError); ok && se.GetStatus() == 409 {
@@ -97,14 +64,10 @@ func (app webApp) GetStatus(ctx context.Context, input *struct {
 // generated and remembered by the caller (the authentication service); this
 // service only forwards it.
 func (app webApp) Start(ctx context.Context, input *struct {
-	Authorization string `header:"Authorization"`
-	Body          restmodels.CloudLoginStartRequest
+	Body restmodels.CloudLoginStartRequest
 }) (*struct {
 	Body restmodels.CloudLoginStartResponse
 }, error) {
-	if err := app.checkServiceToken(input.Authorization); err != nil {
-		return nil, err
-	}
 	applianceID, _, err := app.enrolled(ctx)
 	if err != nil {
 		return nil, err
@@ -127,14 +90,10 @@ func (app webApp) Start(ctx context.Context, input *struct {
 // Redeem exchanges the login code the browser brought back for the cloud
 // user's identity, authenticating to the cloud as this appliance.
 func (app webApp) Redeem(ctx context.Context, input *struct {
-	Authorization string `header:"Authorization"`
-	Body          restmodels.CloudLoginRedeemRequest
+	Body restmodels.CloudLoginRedeemRequest
 }) (*struct {
 	Body restmodels.CloudLoginUserResponse
 }, error) {
-	if err := app.checkServiceToken(input.Authorization); err != nil {
-		return nil, err
-	}
 	applianceID, secret, err := app.enrolled(ctx)
 	if err != nil {
 		return nil, err
@@ -159,14 +118,10 @@ func (app webApp) Redeem(ctx context.Context, input *struct {
 // this appliance's secret) is reported as not allowed; only failing to get
 // an answer at all is an error.
 func (app webApp) CheckAccess(ctx context.Context, input *struct {
-	Authorization string `header:"Authorization"`
-	CloudUserID   int64  `path:"cloudUserId"`
+	CloudUserID int64 `path:"cloudUserId"`
 }) (*struct {
 	Body restmodels.CloudLoginAccessResponse
 }, error) {
-	if err := app.checkServiceToken(input.Authorization); err != nil {
-		return nil, err
-	}
 	applianceID, secret, err := app.enrolled(ctx)
 	if err != nil {
 		return nil, err
